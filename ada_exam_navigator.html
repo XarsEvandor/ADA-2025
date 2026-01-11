@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADA Exam Navigator - EPFL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useMemo, useCallback } = React;
+
+        // Icon component
+        const Icon = ({ name, className, style }) => {
+            const ref = React.useRef(null);
+            React.useEffect(() => {
+                if (ref.current && lucide.icons[name]) {
+                    ref.current.innerHTML = '';
+                    const icon = lucide.createElement(lucide.icons[name]);
+                    ref.current.appendChild(icon);
+                }
+            }, [name]);
+            return <span ref={ref} className={className} style={{display: 'inline-flex', alignItems: 'center', ...style}}></span>;
+        };
+
+        // ============================================
+        // DECISION TREE STRUCTURE
+        // ============================================
+        const decisionTree = {
+          root: {
+            id: 'root',
+            question: "What is the question primarily asking you to do?",
+            hint: "Read the question carefully. Look for action verbs.",
+            options: [
+              { label: "Calculate / Compute a value", next: 'compute', icon: 'Calculator', keywords: ['calculate', 'compute', 'how many', 'count', 'print', 'display', 'what is the'] },
+              { label: "Interpret / Explain results", next: 'interpret', icon: 'MessageSquare', keywords: ['interpret', 'explain', 'what does', 'represent', 'meaning', 'discuss'] },
+              { label: "True or False (with justification)", next: 'truefalse', icon: 'CheckCircle', keywords: ['true or false', 'true/false', 'justify', 'is the following'] },
+              { label: "Compare / Contrast items", next: 'compare', icon: 'GitCompare', keywords: ['compare', 'difference between', 'which is higher', 'which is more', 'most similar', 'most distinct'] },
+              { label: "Propose / Design / Improve", next: 'conceptual', icon: 'Lightbulb', keywords: ['propose', 'design', 'improve', 'how could', 'how would', 'what steps', 'why can\'t'] },
+              { label: "Create visualization / Plot", next: 'visualize', icon: 'BarChart3', keywords: ['plot', 'visualize', 'create a figure', 'argue visually', 'show graphically'] }
+            ]
+          },
+
+          // COMPUTE BRANCH
+          compute: {
+            id: 'compute',
+            question: "What type of value are you computing?",
+            hint: "Identify what the output should be.",
+            options: [
+              { label: "Counts, shapes, unique values", next: 'result_data_exploration', icon: 'Hash', keywords: ['distinct', 'unique', 'shape', 'number of rows', 'count'] },
+              { label: "Regression coefficients / summary", next: 'result_regression_compute', icon: 'TrendingUp', keywords: ['regression', 'fit', 'ols', 'logit', 'coefficient'] },
+              { label: "Classification metrics (accuracy, F1, etc.)", next: 'result_classification_compute', icon: 'Target', keywords: ['accuracy', 'precision', 'recall', 'f1', 'confusion matrix', 'classifier'] },
+              { label: "Network metrics (degree, PageRank, etc.)", next: 'result_network_compute', icon: 'Network', keywords: ['pagerank', 'degree', 'centrality', 'edges', 'nodes', 'graph'] },
+              { label: "Text/TF-IDF values", next: 'result_tfidf_compute', icon: 'FileText', keywords: ['tf-idf', 'tfidf', 'tokens', 'vocabulary', 'word frequency'] },
+              { label: "Statistical test (p-value, t-test)", next: 'result_stats_compute', icon: 'Activity', keywords: ['p-value', 't-test', 'significance', 'hypothesis'] },
+              { label: "Extract/parse from ID or string", next: 'result_parsing', icon: 'Scissors', keywords: ['extract', 'parse', 'split', 'season', 'episode', 'create column'] }
+            ]
+          },
+
+          // INTERPRET BRANCH
+          interpret: {
+            id: 'interpret',
+            question: "What type of output are you interpreting?",
+            hint: "Look at what data/results you're given to explain.",
+            options: [
+              { label: "Regression coefficient or intercept", next: 'interpret_coef', icon: 'TrendingUp', keywords: ['intercept', 'coefficient', 'C(', 'Treatment(reference'] },
+              { label: "P-value or statistical significance", next: 'interpret_significance', icon: 'Activity', keywords: ['p-value', 'significant', '0.05', 'reject', 'null hypothesis'] },
+              { label: "Confusion matrix values", next: 'interpret_confusion', icon: 'Grid3X3', keywords: ['confusion matrix', 'diagonal', 'off-diagonal', 'misclassified'] },
+              { label: "Network centrality values", next: 'interpret_centrality', icon: 'Network', keywords: ['pagerank', 'centrality', 'in-degree', 'out-degree', 'importance'] },
+              { label: "TF-IDF or text analysis results", next: 'interpret_tfidf', icon: 'FileText', keywords: ['tf-idf', 'tokens', 'high value', 'low value'] },
+              { label: "A plot or visualization", next: 'interpret_viz', icon: 'LineChart', keywords: ['plot', 'figure', 'graph', 'visually', 'chart'] },
+              { label: "Model performance (accuracy, etc.)", next: 'interpret_performance', icon: 'Gauge', keywords: ['accuracy', 'performance', 'baseline', 'outperform'] }
+            ]
+          },
+
+          // Interpret coefficient sub-branch
+          interpret_coef: {
+            id: 'interpret_coef',
+            question: "Which specific coefficient aspect?",
+            hint: "Check if they ask about intercept, a specific category, or comparison.",
+            options: [
+              { label: "What does the INTERCEPT represent?", next: 'result_intercept', icon: 'Baseline' },
+              { label: "What does coefficient C(X)[T.value] mean?", next: 'result_coefficient', icon: 'ArrowRight' },
+              { label: "Is the effect significant?", next: 'result_coef_significance', icon: 'HelpCircle' },
+              { label: "Log-transformed interpretation", next: 'result_log_transform', icon: 'Percent' }
+            ]
+          },
+
+          // Interpret confusion matrix sub-branch
+          interpret_confusion: {
+            id: 'interpret_confusion',
+            question: "What about the confusion matrix?",
+            hint: "Diagonal = correct predictions, off-diagonal = errors.",
+            options: [
+              { label: "Which class is most DISTINCT?", next: 'result_most_distinct', icon: 'Star' },
+              { label: "Which classes are most SIMILAR?", next: 'result_most_similar', icon: 'Copy' },
+              { label: "Which classes are LEAST similar?", next: 'result_least_similar', icon: 'X' },
+              { label: "Calculate metrics (precision, recall, etc.)", next: 'result_confusion_metrics', icon: 'Calculator' }
+            ]
+          },
+
+          // Interpret centrality sub-branch  
+          interpret_centrality: {
+            id: 'interpret_centrality',
+            question: "Which centrality measure?",
+            hint: "PageRank = incoming importance, Degree = connection count.",
+            options: [
+              { label: "PageRank values", next: 'result_pagerank', icon: 'Award' },
+              { label: "Out-degree values", next: 'result_outdegree', icon: 'ArrowUpRight' },
+              { label: "In-degree values", next: 'result_indegree', icon: 'ArrowDownLeft' },
+              { label: "Who is most important/central?", next: 'result_most_central', icon: 'Crown' }
+            ]
+          },
+
+          // TRUE/FALSE BRANCH
+          truefalse: {
+            id: 'truefalse',
+            question: "What is the statement about?",
+            hint: "Identify the domain of the claim being made.",
+            options: [
+              { label: "PageRank or network edges", next: 'tf_network', icon: 'Network', keywords: ['pagerank', 'edges', 'outgoing', 'incoming', 'inverted'] },
+              { label: "Statistical significance", next: 'tf_significance', icon: 'Activity', keywords: ['significant', 'p-value', '0.05'] },
+              { label: "Causation vs correlation", next: 'tf_causation', icon: 'GitBranch', keywords: ['cause', 'causal', 'implies', 'conclude'] },
+              { label: "Centrality interpretation", next: 'tf_centrality', icon: 'Target', keywords: ['degree', 'centrality', 'spoke more', 'spoke less'] },
+              { label: "Regression coefficient meaning", next: 'tf_regression', icon: 'TrendingUp', keywords: ['coefficient', 'intercept', 'increase'] },
+              { label: "Classification performance", next: 'tf_classification', icon: 'CheckSquare', keywords: ['accuracy', 'baseline', 'classifier'] }
+            ]
+          },
+
+          // T/F Network sub-branch
+          tf_network: {
+            id: 'tf_network',
+            question: "What specific network claim?",
+            hint: "Remember: PageRank depends ONLY on incoming edges!",
+            options: [
+              { label: "Removing outgoing edges affects PageRank", next: 'result_tf_outgoing', icon: 'Trash2' },
+              { label: "Inverting edges keeps PageRank same", next: 'result_tf_invert', icon: 'RefreshCw' },
+              { label: "Node with many outgoing = high PageRank", next: 'result_tf_outgoing_pr', icon: 'ArrowUpRight' },
+              { label: "Higher out-degree means others spoke less", next: 'result_tf_outdegree_others', icon: 'Users' }
+            ]
+          },
+
+          // COMPARE BRANCH
+          compare: {
+            id: 'compare',
+            question: "What are you comparing?",
+            hint: "Identify the two (or more) things being compared.",
+            options: [
+              { label: "Classifier accuracy vs random baseline", next: 'result_compare_baseline', icon: 'Scale' },
+              { label: "Two groups/categories (e.g., seasons)", next: 'result_compare_groups', icon: 'Users' },
+              { label: "Characters/classes similarity", next: 'interpret_confusion', icon: 'GitCompare' },
+              { label: "Two centrality values", next: 'result_compare_centrality', icon: 'Network' },
+              { label: "Effect sizes across variables", next: 'result_compare_effects', icon: 'BarChart2' }
+            ]
+          },
+
+          // CONCEPTUAL BRANCH
+          conceptual: {
+            id: 'conceptual',
+            question: "What type of conceptual question?",
+            hint: "These test your understanding, not just computation.",
+            options: [
+              { label: "Why can't we use feature X?", next: 'result_why_not_feature', icon: 'XCircle' },
+              { label: "Why might model perform unexpectedly?", next: 'result_unexpected_performance', icon: 'AlertTriangle' },
+              { label: "How to improve the analysis?", next: 'result_improve', icon: 'Wrench' },
+              { label: "Can we conclude causation?", next: 'result_causation', icon: 'GitBranch' },
+              { label: "How to address a confound?", next: 'result_confound', icon: 'Shield' },
+              { label: "Propose a similarity metric", next: 'result_propose_metric', icon: 'Lightbulb' }
+            ]
+          },
+
+          // VISUALIZE BRANCH
+          visualize: {
+            id: 'visualize',
+            question: "What should the visualization show?",
+            hint: "Usually the code is pre-computed; focus on interpretation.",
+            options: [
+              { label: "Distribution of a variable", next: 'result_viz_distribution', icon: 'BarChart3' },
+              { label: "Comparison between groups", next: 'result_viz_comparison', icon: 'GitCompare' },
+              { label: "Trend over time/sequence", next: 'result_viz_trend', icon: 'TrendingUp' },
+              { label: "Confusion matrix heatmap", next: 'result_viz_confusion', icon: 'Grid3X3' },
+              { label: "Argue a point visually", next: 'result_viz_argue', icon: 'MessageSquare' }
+            ]
+          },
+
+          // ============================================
+          // RESULT NODES (terminals with guidance)
+          // ============================================
+          
+          result_data_exploration: {
+            id: 'result_data_exploration',
+            terminal: true,
+            title: "📊 Data Exploration",
+            blitzSearch: "Data Overview → shape, nunique, describe()",
+            template: "There are [NUMBER] [distinct X / rows / columns] in the dataframe.",
+            tips: [
+              "df.shape gives (rows, columns)",
+              "df['col'].nunique() for distinct values",
+              "df['col'].value_counts() for distribution"
+            ],
+            traps: []
+          },
+
+          result_parsing: {
+            id: 'result_parsing',
+            terminal: true,
+            title: "✂️ ID Parsing",
+            blitzSearch: "ID Parsing Analysis",
+            template: "The [component] is extracted as [value]. For ID 's01_e05_c03_u012': season='s01', episode='s01_e05', scene='c03', utterance='u012'.",
+            tips: [
+              "id.split('_')[0] → season",
+              "'_'.join(id.split('_')[:2]) → episode", 
+              "Create new column with df['new'] = df['id'].apply(lambda x: ...)"
+            ],
+            traps: []
+          },
+
+          result_regression_compute: {
+            id: 'result_regression_compute',
+            terminal: true,
+            title: "📈 Regression Computation",
+            blitzSearch: "Regression Analysis → match your EXACT formula",
+            template: "The regression was fit using formula '[FORMULA]'. See summary table for coefficients.",
+            tips: [
+              "Make sure reference category matches exactly",
+              "Formula syntax: 'y ~ C(x, Treatment(reference=\"ref\"))'",
+              "Check both coefficient value AND p-value"
+            ],
+            traps: ["Different reference category = different intercept meaning"]
+          },
+
+          result_classification_compute: {
+            id: 'result_classification_compute',
+            terminal: true,
+            title: "🎯 Classification Metrics",
+            blitzSearch: "Classification Analysis → target variable section",
+            template: "Accuracy = [X]%. Random baseline = 1/[N_classes] = [Y]%.",
+            tips: [
+              "Random baseline = 1/number_of_classes (NOT most frequent!)",
+              "Normalize confusion matrix so ALL cells sum to 1",
+              "Diagonal = correct, off-diagonal = errors"
+            ],
+            traps: ["Random baseline is NOT most-frequent-class accuracy!", "Check normalization method carefully"]
+          },
+
+          result_network_compute: {
+            id: 'result_network_compute',
+            terminal: true,
+            title: "🕸️ Network Metrics",
+            blitzSearch: "Network Analysis → centrality tables",
+            template: "The [centrality metric] for [node] is [value].",
+            tips: [
+              "out_degree ≠ out_degree_centrality (latter normalizes by n-1)",
+              "PageRank depends on INCOMING edges only",
+              "Check if they want raw degree or normalized centrality"
+            ],
+            traps: ["Don't use nx.out_degree_centrality if they want raw out_degree"]
+          },
+
+          result_tfidf_compute: {
+            id: 'result_tfidf_compute',
+            terminal: true,
+            title: "📝 TF-IDF Computation",
+            blitzSearch: "Text Analysis → TF-IDF matrix",
+            template: "TF-IDF value for token '[word]' in [document] is [value].",
+            tips: [
+              "TF = count in document",
+              "IDF = log(total_docs / docs_containing_word)",
+              "High TF-IDF = frequent here, rare elsewhere"
+            ],
+            traps: []
+          },
+
+          result_stats_compute: {
+            id: 'result_stats_compute',
+            terminal: true,
+            title: "📊 Statistical Tests",
+            blitzSearch: "Statistical tests, regression p-values",
+            template: "The p-value is [VALUE]. Since p [</>] 0.05, [we can / cannot] reject H0.",
+            tips: [
+              "p < 0.05 → significant (reject H0)",
+              "p ≥ 0.05 → NOT significant (fail to reject H0)",
+              "p = 0.05 exactly is NOT significant!"
+            ],
+            traps: ["p = 0.05 is NOT significant (must be strictly less)"]
+          },
+
+          result_intercept: {
+            id: 'result_intercept',
+            terminal: true,
+            title: "📍 Intercept Interpretation",
+            blitzSearch: "Regression Analysis → find intercept value",
+            template: "The intercept ([VALUE]) represents the mean [OUTCOME] when all categorical predictors are at their reference level. Specifically, it is the average [OUTCOME] for [REFERENCE CATEGORY].",
+            tips: [
+              "Identify the reference category from C(var, Treatment(reference='X'))",
+              "Intercept = expected value when all dummies are 0",
+              "For season reference='s01': intercept = mean for season 1"
+            ],
+            example: "From 2023 exam: 'The intercept corresponds to the average utterance length of season 1 lines' when reference='s01'",
+            traps: []
+          },
+
+          result_coefficient: {
+            id: 'result_coefficient',
+            terminal: true,
+            title: "📐 Coefficient Interpretation",
+            blitzSearch: "Regression Analysis → find specific coefficient",
+            template: "The coefficient C(X)[T.Z] = [VALUE] represents the difference in average [OUTCOME] between category [Z] and the reference category. A [positive/negative] value means [Z] has [higher/lower] [OUTCOME] by [VALUE] units compared to reference.",
+            tips: [
+              "Always state 'compared to reference category'",
+              "Coefficient = difference FROM reference, not absolute value",
+              "Sign tells direction: + means higher, - means lower"
+            ],
+            example: "C(season)[T.s09] = 5.2 means season 9 utterances are 5.2 characters longer ON AVERAGE than season 1 (the reference).",
+            traps: ["Don't say 'increase of X' - say 'difference of X compared to reference'"]
+          },
+
+          result_coef_significance: {
+            id: 'result_coef_significance',
+            terminal: true,
+            title: "❓ Coefficient Significance",
+            blitzSearch: "Regression Analysis → check p-value column",
+            template: "Looking at the p-value ([P-VALUE]) for this coefficient, since p [< / ≥] 0.05, the difference between [CATEGORY] and [REFERENCE] [is / is not] statistically significant at the 0.05 level.",
+            tips: [
+              "Find the row for your coefficient in the regression summary",
+              "Check the 'P>|t|' or 'P>|z|' column",
+              "Can also check if confidence interval includes 0"
+            ],
+            traps: ["p = 0.05 exactly → NOT significant"]
+          },
+
+          result_log_transform: {
+            id: 'result_log_transform',
+            terminal: true,
+            title: "📊 Log-Transform Interpretation",
+            blitzSearch: "Regression with log(y) as outcome",
+            template: "With log-transformed outcome, coefficient [VALUE] means a multiplicative effect of e^[VALUE] ≈ [MULTIPLIER]. This represents a [PERCENT]% [increase/decrease].",
+            tips: [
+              "e^0.1 ≈ 1.105 → ~10.5% increase",
+              "e^(-0.2) ≈ 0.82 → ~18% decrease", 
+              "Additive in log scale = multiplicative in original scale"
+            ],
+            example: "Coefficient -0.22 → e^(-0.22) ≈ 0.80 → multiply outcome by 0.80 (20% decrease)",
+            traps: []
+          },
+
+          result_most_distinct: {
+            id: 'result_most_distinct',
+            terminal: true,
+            title: "⭐ Most Distinct Class",
+            blitzSearch: "Confusion Matrix → find max diagonal value",
+            template: "Looking at the diagonal of the normalized confusion matrix, [CLASS] has the highest value ([VALUE]), meaning it is correctly classified most often and is therefore most distinct.",
+            tips: [
+              "Diagonal values = proportion correctly classified",
+              "Higher diagonal = more recognizable/distinct",
+              "Check the heatmap for darkest diagonal cell"
+            ],
+            example: "From 2023: 'Monica is the most recognisable by her speech, because she was the best predicted (highest diagonal value)'",
+            traps: []
+          },
+
+          result_most_similar: {
+            id: 'result_most_similar',
+            terminal: true,
+            title: "👯 Most Similar Classes",
+            blitzSearch: "Confusion Matrix → find max OFF-diagonal value",
+            template: "The highest off-diagonal value ([VALUE]) appears at [actual=A, predicted=B], meaning [A] is most frequently misclassified as [B]. These two classes are most similar.",
+            tips: [
+              "Off-diagonal = misclassifications",
+              "High off-diagonal between A and B = they look similar",
+              "Check BOTH directions (A→B and B→A)"
+            ],
+            example: "From 2023: 'Monica and Chandler talk most similarly because Monica's lines were often classified as Chandler's'",
+            traps: []
+          },
+
+          result_least_similar: {
+            id: 'result_least_similar',
+            terminal: true,
+            title: "🔀 Least Similar Classes",
+            blitzSearch: "Confusion Matrix → find min OFF-diagonal (near 0)",
+            template: "The lowest off-diagonal values (near 0) appear between [CLASS A] and [CLASS B], meaning they are rarely confused and therefore least similar.",
+            tips: [
+              "Look for cells with value 0 or very close to 0",
+              "0 confusion = completely distinguishable",
+              "Check both directions"
+            ],
+            example: "From 2023: 'Monica and Phoebe have the least similar speech because Monica's lines were never interpreted as Phoebe's (value ≈ 0)'",
+            traps: []
+          },
+
+          result_confusion_metrics: {
+            id: 'result_confusion_metrics',
+            terminal: true,
+            title: "🔢 Confusion Matrix Metrics",
+            blitzSearch: "Classification Analysis → metrics",
+            template: "From the confusion matrix: TP=[X], FP=[X], FN=[X], TN=[X]. Accuracy=(TP+TN)/total=[X]. Precision=TP/(TP+FP)=[X]. Recall=TP/(TP+FN)=[X].",
+            tips: [
+              "TP = True Positive (predicted +, actual +)",
+              "Precision = 'of predicted positives, how many correct?'",
+              "Recall = 'of actual positives, how many found?'",
+              "F1 = 2×P×R/(P+R)"
+            ],
+            traps: ["Make sure you identify TP/FP/FN/TN correctly from matrix orientation"]
+          },
+
+          result_pagerank: {
+            id: 'result_pagerank',
+            terminal: true,
+            title: "🏆 PageRank Interpretation",
+            blitzSearch: "Network Analysis → PageRank table",
+            template: "PageRank measures importance based on INCOMING connections from other important nodes. [NODE] has the highest PageRank ([VALUE]), meaning they receive responses from many influential others.",
+            tips: [
+              "PageRank = 'importance' based on who points to you",
+              "Like academic citations: cited by important papers = more important",
+              "ONLY incoming edges matter!"
+            ],
+            traps: ["PageRank does NOT depend on outgoing edges at all"]
+          },
+
+          result_outdegree: {
+            id: 'result_outdegree',
+            terminal: true,
+            title: "➡️ Out-Degree Interpretation",
+            blitzSearch: "Network Analysis → degree table",
+            template: "Out-degree counts outgoing connections. [NODE] has out-degree [VALUE], meaning they reply to / connect to [VALUE] others. This says nothing about how many others connect to them.",
+            tips: [
+              "Out-degree = number of outgoing edges",
+              "High out-degree = this node is very active",
+              "Does NOT mean others are less active!"
+            ],
+            traps: ["Higher out-degree does NOT imply others spoke less"]
+          },
+
+          result_indegree: {
+            id: 'result_indegree',
+            terminal: true,
+            title: "⬅️ In-Degree Interpretation",
+            blitzSearch: "Network Analysis → degree table",
+            template: "In-degree counts incoming connections. [NODE] has in-degree [VALUE], meaning [VALUE] others reply to / connect to them.",
+            tips: [
+              "In-degree = number of incoming edges",
+              "High in-degree = many others point to this node",
+              "Related to but not same as PageRank"
+            ],
+            traps: []
+          },
+
+          result_most_central: {
+            id: 'result_most_central',
+            terminal: true,
+            title: "👑 Most Central/Important Node",
+            blitzSearch: "Network Analysis → check multiple metrics",
+            template: "According to [METRIC], [NODE] is most important because [REASON]. PageRank=[X] (highest incoming importance), Out-degree=[Y] (most outgoing connections).",
+            tips: [
+              "Different metrics can give different answers",
+              "PageRank: importance via incoming from important nodes",
+              "Degree: raw connection count",
+              "State which metric you're using"
+            ],
+            example: "From 2023: 'Rachel is the protagonist because she has highest out-degree AND highest PageRank'",
+            traps: []
+          },
+
+          result_tf_outgoing: {
+            id: 'result_tf_outgoing',
+            terminal: true,
+            title: "✓/✗ Removing Outgoing Edges & PageRank",
+            blitzSearch: "Conceptual understanding",
+            template: "TRUE that removing X's outgoing edges does NOT change X's PageRank. PageRank depends ONLY on incoming edges. Removing outgoing edges only affects the PageRank of nodes X was pointing to.",
+            tips: [
+              "Your PageRank = function of who points TO you",
+              "Your outgoing edges affect OTHERS' PageRank, not yours"
+            ],
+            traps: []
+          },
+
+          result_tf_invert: {
+            id: 'result_tf_invert',
+            terminal: true,
+            title: "✓/✗ Inverting Edges & PageRank",
+            blitzSearch: "Conceptual understanding",
+            template: "FALSE. Inverting all edges completely changes PageRank. Before: PageRank based on incoming. After inversion: what was incoming is now outgoing, so PageRank values will be different.",
+            tips: [
+              "Inversion swaps in-degree and out-degree",
+              "A node with high in-degree (high PR) → becomes high out-degree (low PR)"
+            ],
+            traps: []
+          },
+
+          result_tf_outgoing_pr: {
+            id: 'result_tf_outgoing_pr',
+            terminal: true,
+            title: "✓/✗ Many Outgoing = High PageRank?",
+            blitzSearch: "Conceptual understanding",
+            template: "FALSE. A node with many outgoing edges but NO incoming edges will have very LOW PageRank (only the dampening factor minimum). Outgoing edges don't contribute to YOUR PageRank.",
+            tips: [
+              "PageRank ≈ 'prestige from who cites you'",
+              "Citing many others doesn't make you prestigious"
+            ],
+            traps: []
+          },
+
+          result_tf_outdegree_others: {
+            id: 'result_tf_outdegree_others',
+            terminal: true,
+            title: "✓/✗ Higher Out-Degree = Others Spoke Less?",
+            blitzSearch: "Conceptual understanding",
+            template: "FALSE. Higher out-degree for X only means X made more outgoing connections. It implies nothing about the activity of others. Out-degree measures what X does, not what others do.",
+            tips: [
+              "Out-degree is about THIS node's actions",
+              "It's not a zero-sum game",
+              "Others' speech is independent"
+            ],
+            traps: []
+          },
+
+          tf_significance: {
+            id: 'tf_significance',
+            terminal: true,
+            title: "✓/✗ Significance Claims",
+            blitzSearch: "Check p-values in output",
+            template: "To verify: check if p < 0.05 (strictly less). If p = 0.05, NOT significant. If confidence interval includes 0, NOT significant.",
+            tips: [
+              "p < 0.05 → significant",
+              "p ≥ 0.05 → NOT significant",
+              "Two datasets can give different conclusions - that's okay"
+            ],
+            traps: ["p = 0.05 exactly is NOT significant"]
+          },
+
+          tf_causation: {
+            id: 'tf_causation',
+            terminal: true,
+            title: "✓/✗ Causation Claims",
+            blitzSearch: "Conceptual - check study design",
+            template: "For observational data: FALSE that we can conclude causation. We can only establish correlation/association. Confounding variables may explain the relationship. Only RCTs support causal claims.",
+            tips: [
+              "Observational → correlation only",
+              "RCT with randomization → causation possible",
+              "Look for confounders"
+            ],
+            traps: ["Never say 'X causes Y' for observational data"]
+          },
+
+          tf_centrality: {
+            id: 'tf_centrality',
+            terminal: true,
+            title: "✓/✗ Centrality Interpretation",
+            blitzSearch: "Check definitions carefully",
+            template: "Verify the claim against definitions: PageRank=incoming importance, out-degree=outgoing count, in-degree=incoming count. Centrality measures are about graph structure, not causation.",
+            tips: [
+              "out_degree_centrality normalizes by (n-1), raw out_degree does not",
+              "High centrality ≠ causation"
+            ],
+            traps: []
+          },
+
+          tf_regression: {
+            id: 'tf_regression',
+            terminal: true,
+            title: "✓/✗ Regression Claims",
+            blitzSearch: "Check regression output",
+            template: "Verify coefficient interpretation is about DIFFERENCE from reference, not absolute change. Check p-value for significance. Intercept is value when all dummies = 0 (all at reference level).",
+            tips: [
+              "Coefficient = difference from reference",
+              "Not 'increase by X' but 'X more than reference'"
+            ],
+            traps: []
+          },
+
+          tf_classification: {
+            id: 'tf_classification',
+            terminal: true,
+            title: "✓/✗ Classification Claims",
+            blitzSearch: "Classification Analysis",
+            template: "Verify random baseline = 1/n_classes (NOT most-frequent). Check accuracy calculation. Confusion matrix normalization method matters.",
+            tips: [
+              "Random baseline = 1/number_of_classes",
+              "NOT most-frequent-class accuracy"
+            ],
+            traps: ["Random baseline trap is very common"]
+          },
+
+          result_compare_baseline: {
+            id: 'result_compare_baseline',
+            terminal: true,
+            title: "⚖️ Accuracy vs Random Baseline",
+            blitzSearch: "Classification Analysis → accuracy",
+            template: "Classifier accuracy: [X]%. Random baseline (uniform prediction): 1/[N] = [Y]%. The classifier outperforms random by [X-Y] percentage points, indicating [meaningful learning / marginal improvement].",
+            tips: [
+              "Random baseline = 1/number_of_classes",
+              "NOT most-frequent-class!",
+              "Small improvement over random may still be meaningful"
+            ],
+            traps: ["Random baseline is 1/n_classes, NOT majority class accuracy!"]
+          },
+
+          result_compare_groups: {
+            id: 'result_compare_groups',
+            terminal: true,
+            title: "👥 Comparing Groups",
+            blitzSearch: "Groupby Analysis, Regression coefficients",
+            template: "Group [A] has mean [VALUE_A], Group [B] has mean [VALUE_B]. The difference is [DIFF]. To test significance, check p-value or confidence interval overlap.",
+            tips: [
+              "Use regression coefficient if comparing to reference",
+              "Use t-test for direct group comparison",
+              "Check if CIs overlap for visual significance test"
+            ],
+            traps: []
+          },
+
+          result_compare_centrality: {
+            id: 'result_compare_centrality',
+            terminal: true,
+            title: "🕸️ Comparing Centralities",
+            blitzSearch: "Network Analysis → centrality tables",
+            template: "[NODE_A] has [METRIC]=[VALUE_A], [NODE_B] has [METRIC]=[VALUE_B]. [NODE_A/B] is more [central/important] by this measure.",
+            tips: [
+              "Compare like with like (both PageRank, or both degree)",
+              "Different metrics may rank nodes differently",
+              "Consider confidence intervals if available"
+            ],
+            traps: []
+          },
+
+          result_compare_effects: {
+            id: 'result_compare_effects',
+            terminal: true,
+            title: "📊 Comparing Effect Sizes",
+            blitzSearch: "Regression Analysis → coefficient plot",
+            template: "Variable [X] has coefficient [VAL_X], variable [Y] has coefficient [VAL_Y]. [X/Y] has larger effect. Note: only compare if variables are standardized or on same scale.",
+            tips: [
+              "Standardize variables to compare effect sizes",
+              "Check confidence intervals overlap",
+              "Larger coefficient ≠ more significant"
+            ],
+            traps: ["Can't compare coefficients on different scales without standardization"]
+          },
+
+          result_why_not_feature: {
+            id: 'result_why_not_feature',
+            terminal: true,
+            title: "🚫 Why Can't We Use Feature X?",
+            blitzSearch: "Conceptual understanding",
+            template: "Feature [X] cannot be used because: (1) It wouldn't be available at prediction time, OR (2) It IS the target variable, OR (3) It causes data leakage, OR (4) It perfectly encodes the outcome.",
+            tips: [
+              "Data leakage = using future info to predict past",
+              "Can't use 'time of death' to predict death",
+              "Think: 'would I have this for a NEW observation?'"
+            ],
+            traps: []
+          },
+
+          result_unexpected_performance: {
+            id: 'result_unexpected_performance',
+            terminal: true,
+            title: "⚠️ Unexpected Model Performance",
+            blitzSearch: "Conceptual understanding",
+            template: "Unexpectedly [good/bad] performance may be due to: Data leakage, overfitting, underfitting, class imbalance, feature that shouldn't be available, inappropriate model, or insufficient features.",
+            tips: [
+              "Too good? Check for leakage or overfitting",
+              "Too bad? Check features, model choice, class balance",
+              "Verify train/test split is correct"
+            ],
+            traps: []
+          },
+
+          result_improve: {
+            id: 'result_improve',
+            terminal: true,
+            title: "🔧 How to Improve Analysis",
+            blitzSearch: "Conceptual understanding",
+            template: "Possible improvements: Add more/better features, use cross-validation, try different model, address class imbalance, remove data leakage, add regularization, increase sample size, use matching for causal analysis.",
+            tips: [
+              "Match the improvement to the problem",
+              "Imbalance → resampling, class weights",
+              "Overfitting → regularization, simpler model",
+              "Confounding → matching, add controls"
+            ],
+            traps: []
+          },
+
+          result_causation: {
+            id: 'result_causation',
+            terminal: true,
+            title: "🔀 Causation Questions",
+            blitzSearch: "Conceptual understanding",
+            template: "For observational data: Cannot conclude causation, only association/correlation. Confounders may explain relationship. For RCT: Can make causal claims if properly randomized. For stronger causal claims from observational data: use propensity score matching.",
+            tips: [
+              "Observational → 'associated with', 'correlated with'",
+              "RCT → 'causes', 'leads to'",
+              "Propensity matching helps but doesn't guarantee causation"
+            ],
+            traps: ["Never claim causation from observational data alone"]
+          },
+
+          result_confound: {
+            id: 'result_confound',
+            terminal: true,
+            title: "🛡️ Addressing Confounds",
+            blitzSearch: "Observational studies methods",
+            template: "To address confounding: (1) Include confounder as control variable in regression, (2) Use propensity score matching to balance groups, (3) Match exactly on confounding variable, (4) Restrict analysis to subgroups.",
+            tips: [
+              "Propensity matching: match treated/control with similar probability of treatment",
+              "Exact matching: ensure same value of confounder",
+              "Adding controls: include in regression formula"
+            ],
+            example: "From 2023: 'Match on conversation context to remove confound of same-conversation similarity'",
+            traps: []
+          },
+
+          result_propose_metric: {
+            id: 'result_propose_metric',
+            terminal: true,
+            title: "💡 Proposing a Metric",
+            blitzSearch: "Conceptual understanding",
+            template: "Proposed metric: [DESCRIPTION]. This works by [MECHANISM]. It captures [WHAT IT MEASURES] because [REASONING].",
+            tips: [
+              "Be specific about what you're measuring",
+              "Explain why it captures the concept",
+              "Consider edge cases"
+            ],
+            example: "From 2023: 'Similarity between characters = count of replies between them per episode'",
+            traps: []
+          },
+
+          interpret_significance: {
+            id: 'interpret_significance',
+            terminal: true,
+            title: "📊 Significance Interpretation",
+            blitzSearch: "Regression p-values, t-test results",
+            template: "With p = [VALUE], since p [</>] 0.05, the result [is/is not] statistically significant at the 0.05 level. We [can/cannot] reject the null hypothesis.",
+            tips: [
+              "p < 0.05 → reject H0 → significant",
+              "p ≥ 0.05 → fail to reject H0 → not significant",
+              "Confidence interval: significant if doesn't include 0"
+            ],
+            traps: ["p = 0.05 exactly is NOT significant"]
+          },
+
+          interpret_tfidf: {
+            id: 'interpret_tfidf',
+            terminal: true,
+            title: "📝 TF-IDF Interpretation",
+            blitzSearch: "Text Analysis → TF-IDF values",
+            template: "High TF-IDF for token '[WORD]' means it appears frequently in this document but rarely in others - it's distinctive for this document. Low TF-IDF means common across all documents.",
+            tips: [
+              "TF = how often here",
+              "IDF = how rare everywhere else",
+              "High TF-IDF = distinctive/characteristic"
+            ],
+            traps: []
+          },
+
+          interpret_viz: {
+            id: 'interpret_viz',
+            terminal: true,
+            title: "📈 Visualization Interpretation",
+            blitzSearch: "Look at the relevant figure",
+            template: "The [plot type] shows [main observation]. We can see that [specific pattern]. This suggests [interpretation].",
+            tips: [
+              "Describe the overall trend first",
+              "Point to specific features (peaks, gaps, outliers)",
+              "Connect to the question being asked"
+            ],
+            traps: []
+          },
+
+          interpret_performance: {
+            id: 'interpret_performance',
+            terminal: true,
+            title: "📊 Model Performance Interpretation",
+            blitzSearch: "Classification Analysis → metrics",
+            template: "The model achieves [METRIC]=[VALUE]. Compared to baseline of [BASELINE], this represents [improvement/similar/worse] performance, indicating [meaningful learning / room for improvement].",
+            tips: [
+              "Always compare to appropriate baseline",
+              "Random baseline = 1/n_classes",
+              "Consider class imbalance when interpreting"
+            ],
+            traps: ["Random baseline ≠ majority class accuracy"]
+          },
+
+          result_viz_distribution: {
+            id: 'result_viz_distribution',
+            terminal: true,
+            title: "📊 Distribution Visualization",
+            blitzSearch: "Value Counts, Histograms",
+            template: "The distribution of [VARIABLE] shows [shape: normal/skewed/bimodal]. Most values fall in [RANGE]. There are [outliers/no outliers] at [LOCATION].",
+            tips: [
+              "Histogram for continuous, bar plot for categorical",
+              "Note center, spread, shape, outliers",
+              "Box plot shows quartiles"
+            ],
+            traps: []
+          },
+
+          result_viz_comparison: {
+            id: 'result_viz_comparison',
+            terminal: true,
+            title: "📊 Comparison Visualization",
+            blitzSearch: "Groupby Analysis, comparison plots",
+            template: "Comparing [GROUP_A] vs [GROUP_B]: [OBSERVATION about difference]. Error bars [overlap/don't overlap], suggesting [significance assessment].",
+            tips: [
+              "Use error bars for uncertainty",
+              "Non-overlapping error bars ≈ significant difference",
+              "Bar plot or box plot for group comparison"
+            ],
+            traps: []
+          },
+
+          result_viz_trend: {
+            id: 'result_viz_trend',
+            terminal: true,
+            title: "📈 Trend Visualization",
+            blitzSearch: "Time series, line plots",
+            template: "The trend shows [increasing/decreasing/stable] pattern over [time period]. Notable changes occur at [POINTS]. The overall pattern suggests [INTERPRETATION].",
+            tips: [
+              "Line plot for trends over time",
+              "Include confidence intervals if available",
+              "Note any seasonality or cycles"
+            ],
+            traps: []
+          },
+
+          result_viz_confusion: {
+            id: 'result_viz_confusion',
+            terminal: true,
+            title: "🔲 Confusion Matrix Visualization",
+            blitzSearch: "Classification Analysis → heatmap",
+            template: "The confusion matrix heatmap shows [PATTERN]. Diagonal cells (correct predictions) are [strong/weak]. Off-diagonal confusion is highest between [CLASS_A] and [CLASS_B].",
+            tips: [
+              "Darker diagonal = better classification",
+              "Off-diagonal = misclassifications",
+              "Normalize for interpretability"
+            ],
+            traps: []
+          },
+
+          result_viz_argue: {
+            id: 'result_viz_argue',
+            terminal: true,
+            title: "💬 Argue Visually",
+            blitzSearch: "Create plot that supports argument",
+            template: "The plot visually demonstrates [CLAIM] because [OBSERVATION]. Specifically, we see [EVIDENCE] which supports [CONCLUSION].",
+            tips: [
+              "Choose plot type that best shows your point",
+              "Highlight the key feature",
+              "Be specific about what pattern supports your argument"
+            ],
+            example: "From 2023: 'Bar plot of utterance counts shows 6 characters with dramatically more lines than others → 6 main characters'",
+            traps: []
+          }
+        };
+
+        // ============================================
+        // KEYWORD DETECTION
+        // ============================================
+        const detectKeywords = (text) => {
+          const lower = text.toLowerCase();
+          const matches = [];
+          
+          const checkNode = (node) => {
+            if (node.options) {
+              node.options.forEach(opt => {
+                if (opt.keywords) {
+                  opt.keywords.forEach(kw => {
+                    if (lower.includes(kw.toLowerCase())) {
+                      matches.push({ keyword: kw, option: opt.label, next: opt.next });
+                    }
+                  });
+                }
+              });
+            }
+          };
+
+          Object.values(decisionTree).forEach(checkNode);
+          
+          // Deduplicate by 'next' value
+          const unique = [];
+          const seen = new Set();
+          matches.forEach(m => {
+            if (!seen.has(m.next)) {
+              seen.add(m.next);
+              unique.push(m);
+            }
+          });
+          
+          return unique.slice(0, 5); // Top 5 matches
+        };
+
+        // ============================================
+        // COMMON TRAPS DATA
+        // ============================================
+        const traps = [
+          { trap: 'Confusion matrix normalization', wrong: 'Row-wise (rows sum to 1)', correct: 'ALL cells sum to 1 (when asked for fully normalized)', source: '2023 exam' },
+          { trap: 'Random baseline for classification', wrong: 'Most frequent class accuracy', correct: '1 / number_of_classes', source: '2023 exam' },
+          { trap: 'PageRank dependency', wrong: 'Depends on outgoing edges', correct: 'Depends ONLY on incoming edges', source: '2023 exam' },
+          { trap: 'out_degree vs out_degree_centrality', wrong: "They're the same", correct: 'out_degree_centrality = out_degree / (n-1)', source: '2023 exam' },
+          { trap: 'Correlation vs causation', wrong: '"X causes Y"', correct: '"X is associated with Y" (unless RCT)', source: 'Course materials' },
+          { trap: 'p-value threshold', wrong: 'p = 0.05 is significant', correct: 'p < 0.05 is significant (strictly less than)', source: 'Multiple quizzes' },
+          { trap: 'Coefficient interpretation', wrong: '"Increase of X"', correct: '"Difference compared to REFERENCE category"', source: '2023 exam' },
+          { trap: 'Coefficient significance', wrong: 'Large coefficient = significant', correct: 'Check p-value, not magnitude', source: 'Course materials' },
+          { trap: 'Cross-validation K selection', wrong: 'Choose K with lowest training error', correct: 'Choose K with lowest VALIDATION error', source: 'Quiz 8' },
+          { trap: 'Micro vs Macro average', wrong: 'Same for all metrics', correct: 'Micro for overall, Macro for per-class performance', source: 'Quiz 5' }
+        ];
+
+        // ============================================
+        // MAIN COMPONENT
+        // ============================================
+        function ADAExamNavigator() {
+          const [darkMode, setDarkMode] = useState(false);
+          const [activeTab, setActiveTab] = useState('tree');
+          const [path, setPath] = useState(['root']);
+          const [questionInput, setQuestionInput] = useState('');
+          const [detectedMatches, setDetectedMatches] = useState([]);
+
+          const currentNode = decisionTree[path[path.length - 1]];
+
+          const handleOptionClick = (nextId) => {
+            setPath([...path, nextId]);
+          };
+
+          const handleBack = () => {
+            if (path.length > 1) {
+              setPath(path.slice(0, -1));
+            }
+          };
+
+          const handleReset = () => {
+            setPath(['root']);
+            setQuestionInput('');
+            setDetectedMatches([]);
+          };
+
+          const handleDetect = () => {
+            const matches = detectKeywords(questionInput);
+            setDetectedMatches(matches);
+          };
+
+          const handleJumpTo = (nodeId) => {
+            setPath(['root', nodeId]);
+            setDetectedMatches([]);
+          };
+
+          // Colors
+          const textPrimary = darkMode ? 'text-gray-50' : 'text-gray-900';
+          const textSecondary = darkMode ? 'text-gray-200' : 'text-gray-600';
+          const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
+          const bgPrimary = darkMode ? 'bg-gray-900' : 'bg-gray-50';
+          const bgSecondary = darkMode ? 'bg-gray-800' : 'bg-white';
+          const bgTertiary = darkMode ? 'bg-gray-700' : 'bg-gray-100';
+          const borderColor = darkMode ? 'border-gray-600' : 'border-gray-200';
+
+          const tabs = [
+            { id: 'tree', label: 'Decision Tree', icon: 'GitBranch' },
+            { id: 'detect', label: 'Smart Detect', icon: 'Search' },
+            { id: 'blitz', label: 'Blitz Guide', icon: 'FileText' },
+            { id: 'traps', label: 'Traps', icon: 'AlertTriangle' }
+          ];
+
+          const blitzRows = [
+            ['Rows, columns, unique values', '"Data Overview" section → shape, nunique', 'df.shape, df["col"].nunique()'],
+            ['Category distribution', '"Value Counts" → column name dropdown', 'df["col"].value_counts()'],
+            ['Mean, median, std', '"Data Overview" → describe() table', 'df["col"].describe()'],
+            ['Regression coefficients', '"Regression Analysis" → match your EXACT formula', 'smf.ols() or smf.logit()'],
+            ['Intercept meaning', '"Regression Analysis" → Intercept row', 'Value when all dummies = 0'],
+            ['P-values for significance', '"Regression Analysis" → P>|t| column', 'p < 0.05 = significant'],
+            ['Classification accuracy', '"Classification Analysis" → target variable', 'accuracy_score()'],
+            ['Random baseline', 'Calculate: 1 / number_of_classes', 'NOT most-frequent class!'],
+            ['Confusion matrix', '"Classification Analysis" → normalized matrix', 'confusion_matrix() / total'],
+            ['Most distinct class', 'Confusion matrix → highest DIAGONAL value', 'Best self-classification'],
+            ['Most similar classes', 'Confusion matrix → highest OFF-diagonal value', 'Most confused pair'],
+            ['PageRank centrality', '"Network Analysis" → PageRank table', 'nx.pagerank(G)'],
+            ['Out-degree (raw)', '"Network Analysis" → degree table', 'dict(G.out_degree())'],
+            ['Out-degree centrality', '"Network Analysis" → centrality table', 'nx.out_degree_centrality(G)'],
+            ['TF-IDF values', '"Text Analysis" → TF-IDF matrix', 'TfidfVectorizer()'],
+            ['Correlations', '"Correlation Analysis" → heatmap', 'df.corr()'],
+            ['Group comparisons', '"Groupby Analysis" → select column', 'df.groupby("col").mean()'],
+            ['Clustering results', '"Clustering Analysis" → silhouette', 'KMeans, silhouette_score()']
+          ];
+
+          return (
+            <div className={`min-h-screen transition-colors duration-300 ${bgPrimary} ${textPrimary}`}>
+              {/* Header */}
+              <header className={`sticky top-0 z-50 border-b ${bgSecondary} ${borderColor}`}>
+                <div className="max-w-4xl mx-auto px-4 py-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl">
+                        <Icon name="BookOpen" className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h1 className={`text-xl font-bold ${textPrimary}`}>ADA Exam Navigator</h1>
+                        <p className={`text-sm ${textMuted}`}>Intelligent Question Guide</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-lg ${bgTertiary}`}>
+                      <Icon name={darkMode ? 'Sun' : 'Moon'} className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Tabs */}
+                  <div className="flex gap-2">
+                    {tabs.map(tab => (
+                      <button key={tab.id} onClick={() => { setActiveTab(tab.id); if(tab.id === 'tree') handleReset(); }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                          activeTab === tab.id ? 'bg-blue-600 text-white' : `${bgTertiary} ${textSecondary}`
+                        }`}>
+                        <Icon name={tab.icon} className="w-4 h-4" />
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </header>
+
+              <main className="max-w-4xl mx-auto px-4 py-6">
+                {/* DECISION TREE TAB */}
+                {activeTab === 'tree' && (
+                  <div className="space-y-4">
+                    {/* Breadcrumb */}
+                    <div className={`p-3 rounded-lg ${bgTertiary} flex items-center gap-2 flex-wrap`}>
+                      <span className={textMuted}>Path:</span>
+                      {path.map((nodeId, idx) => (
+                        <React.Fragment key={nodeId}>
+                          {idx > 0 && <Icon name="ChevronRight" className={`w-4 h-4 ${textMuted}`} />}
+                          <button 
+                            onClick={() => setPath(path.slice(0, idx + 1))}
+                            className={`px-2 py-1 rounded text-sm ${idx === path.length - 1 ? 'bg-blue-600 text-white' : `${bgSecondary} ${textSecondary}`}`}>
+                            {decisionTree[nodeId]?.title || decisionTree[nodeId]?.question?.slice(0, 20) + '...' || nodeId}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                    </div>
+
+                    {/* Current Node */}
+                    <div className={`p-6 rounded-xl ${bgSecondary} border ${borderColor} fade-in`}>
+                      {currentNode.terminal ? (
+                        // TERMINAL NODE - Show guidance
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="p-3 bg-green-500/20 rounded-xl">
+                              <Icon name="CheckCircle" className="w-8 h-8 text-green-500" />
+                            </div>
+                            <h2 className={`text-2xl font-bold ${textPrimary}`}>{currentNode.title}</h2>
+                          </div>
+
+                          <div className={`p-4 rounded-lg ${darkMode ? 'bg-blue-950' : 'bg-blue-50'} border ${darkMode ? 'border-blue-700' : 'border-blue-200'}`}>
+                            <p className={`text-sm font-medium mb-1 ${darkMode ? 'text-blue-200' : 'text-blue-700'}`}>🔍 Search in Blitz Report:</p>
+                            <p className={darkMode ? 'text-blue-100' : 'text-blue-800'}>{currentNode.blitzSearch}</p>
+                          </div>
+
+                          <div className={`p-4 rounded-lg ${darkMode ? 'bg-emerald-950' : 'bg-emerald-50'} border ${darkMode ? 'border-emerald-700' : 'border-emerald-200'}`}>
+                            <p className={`text-sm font-medium mb-1 ${darkMode ? 'text-emerald-200' : 'text-emerald-700'}`}>📝 Answer Template:</p>
+                            <p className={`font-mono text-sm ${darkMode ? 'text-emerald-100' : 'text-emerald-800'}`}>{currentNode.template}</p>
+                          </div>
+
+                          {currentNode.tips && currentNode.tips.length > 0 && (
+                            <div className={`p-4 rounded-lg ${bgTertiary}`}>
+                              <p className={`text-sm font-medium mb-2 ${textPrimary}`}>💡 Tips:</p>
+                              <ul className={`list-disc list-inside space-y-1 text-sm ${textSecondary}`}>
+                                {currentNode.tips.map((tip, i) => <li key={i}>{tip}</li>)}
+                              </ul>
+                            </div>
+                          )}
+
+                          {currentNode.example && (
+                            <div className={`p-4 rounded-lg ${darkMode ? 'bg-purple-950' : 'bg-purple-50'} border ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
+                              <p className={`text-sm font-medium mb-1 ${darkMode ? 'text-purple-200' : 'text-purple-700'}`}>📚 Example from past exams:</p>
+                              <p className={`text-sm ${darkMode ? 'text-purple-100' : 'text-purple-800'}`}>{currentNode.example}</p>
+                            </div>
+                          )}
+
+                          {currentNode.traps && currentNode.traps.length > 0 && (
+                            <div className={`p-4 rounded-lg ${darkMode ? 'bg-red-950' : 'bg-red-50'} border ${darkMode ? 'border-red-700' : 'border-red-200'}`}>
+                              <p className={`text-sm font-medium mb-2 ${darkMode ? 'text-red-200' : 'text-red-700'}`}>⚠️ Watch out for:</p>
+                              <ul className={`list-disc list-inside space-y-1 text-sm ${darkMode ? 'text-red-100' : 'text-red-800'}`}>
+                                {currentNode.traps.map((trap, i) => <li key={i}>{trap}</li>)}
+                              </ul>
+                            </div>
+                          )}
+
+                          <button onClick={handleReset} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            <Icon name="RotateCcw" className="w-4 h-4" /> Start Over
+                          </button>
+                        </div>
+                      ) : (
+                        // BRANCH NODE - Show question and options
+                        <div className="space-y-4">
+                          <div>
+                            <h2 className={`text-xl font-bold mb-2 ${textPrimary}`}>{currentNode.question}</h2>
+                            {currentNode.hint && (
+                              <p className={`text-sm ${textMuted}`}>💡 {currentNode.hint}</p>
+                            )}
+                          </div>
+
+                          <div className="grid gap-3">
+                            {currentNode.options.map((opt, idx) => (
+                              <button key={idx} onClick={() => handleOptionClick(opt.next)}
+                                className={`p-4 rounded-lg border ${borderColor} ${bgTertiary} hover:border-blue-500 transition-all text-left flex items-center gap-3`}>
+                                <div className={`p-2 rounded-lg ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`}>
+                                  <Icon name={opt.icon || 'Circle'} className={`w-5 h-5 ${textSecondary}`} />
+                                </div>
+                                <span className={textPrimary}>{opt.label}</span>
+                                <Icon name="ChevronRight" className={`w-5 h-5 ${textMuted} ml-auto`} />
+                              </button>
+                            ))}
+                          </div>
+
+                          {path.length > 1 && (
+                            <button onClick={handleBack} className={`flex items-center gap-2 px-4 py-2 ${bgTertiary} rounded-lg ${textSecondary}`}>
+                              <Icon name="ArrowLeft" className="w-4 h-4" /> Back
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* SMART DETECT TAB */}
+                {activeTab === 'detect' && (
+                  <div className="space-y-4">
+                    <div className={`p-6 rounded-xl ${bgSecondary} border ${borderColor}`}>
+                      <h2 className={`text-xl font-bold mb-4 ${textPrimary}`}>🔍 Smart Question Detector</h2>
+                      <p className={`mb-4 ${textSecondary}`}>Paste your exam question below and I'll identify the question type:</p>
+                      
+                      <textarea
+                        value={questionInput}
+                        onChange={(e) => setQuestionInput(e.target.value)}
+                        placeholder="Paste the exam question here..."
+                        className={`w-full p-4 rounded-lg border ${borderColor} ${bgTertiary} ${textPrimary} h-32 resize-none focus:ring-2 focus:ring-blue-500 outline-none`}
+                      />
+                      
+                      <button onClick={handleDetect} className="mt-4 flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        <Icon name="Zap" className="w-5 h-5" /> Analyze Question
+                      </button>
+                    </div>
+
+                    {detectedMatches.length > 0 && (
+                      <div className={`p-6 rounded-xl ${bgSecondary} border ${borderColor} fade-in`}>
+                        <h3 className={`text-lg font-bold mb-4 ${textPrimary}`}>🎯 Detected Question Types:</h3>
+                        <div className="space-y-3">
+                          {detectedMatches.map((match, idx) => (
+                            <button key={idx} onClick={() => { handleJumpTo(match.next); setActiveTab('tree'); }}
+                              className={`w-full p-4 rounded-lg border ${borderColor} ${bgTertiary} hover:border-blue-500 transition-all text-left`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className={`font-medium ${textPrimary}`}>{match.option}</p>
+                                  <p className={`text-sm ${textMuted}`}>Matched keyword: "{match.keyword}"</p>
+                                </div>
+                                <Icon name="ArrowRight" className={`w-5 h-5 ${textMuted}`} />
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {questionInput && detectedMatches.length === 0 && (
+                      <div className={`p-4 rounded-lg ${darkMode ? 'bg-amber-950' : 'bg-amber-50'} border ${darkMode ? 'border-amber-700' : 'border-amber-200'}`}>
+                        <p className={darkMode ? 'text-amber-200' : 'text-amber-700'}>No keywords detected. Try using the Decision Tree tab to manually identify the question type.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* BLITZ GUIDE TAB */}
+                {activeTab === 'blitz' && (
+                  <div className="space-y-4">
+                    <div className={`p-6 rounded-xl ${bgSecondary} border ${borderColor}`}>
+                      <h2 className={`text-xl font-bold mb-2 ${textPrimary}`}>🎯 Blitz Report Navigation Guide</h2>
+                      <p className={`mb-4 ${textSecondary}`}>Your exam_blitz.py script pre-computes all analyses. Here's exactly where to find each answer:</p>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className={bgTertiary}>
+                            <tr>
+                              <th className={`text-left p-3 ${textPrimary}`}>Question About...</th>
+                              <th className={`text-left p-3 ${textPrimary}`}>Find in Blitz Report</th>
+                              <th className={`text-left p-3 ${textPrimary}`}>Code Reference</th>
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${borderColor}`}>
+                            {blitzRows.map(([question, location, code], idx) => (
+                              <tr key={idx} className={darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}>
+                                <td className={`p-3 ${textPrimary}`}>{question}</td>
+                                <td className={`p-3 ${textSecondary}`}>{location}</td>
+                                <td className={`p-3 font-mono text-xs ${textMuted}`}>{code}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-950 border-blue-700' : 'bg-blue-50 border-blue-200'} border`}>
+                      <h3 className={`font-semibold mb-2 ${darkMode ? 'text-blue-100' : 'text-blue-800'}`}>💡 Pro Tips for Using the Blitz Report</h3>
+                      <ul className={`text-sm space-y-2 ${darkMode ? 'text-blue-200' : 'text-blue-700'}`}>
+                        <li>• <strong>Regression:</strong> Match the EXACT formula from the question (including reference category)</li>
+                        <li>• <strong>Networks:</strong> Check if they want raw degree or normalized centrality - they're different!</li>
+                        <li>• <strong>Classification:</strong> Random baseline = 1/n_classes, NOT most-frequent class</li>
+                        <li>• <strong>Confusion Matrix:</strong> Check normalization - "all cells sum to 1" vs "rows sum to 1"</li>
+                        <li>• Use <strong>Ctrl+F</strong> to search for specific variable names in the blitz HTML</li>
+                      </ul>
+                    </div>
+
+                    <div className={`p-4 rounded-xl ${darkMode ? 'bg-amber-950 border-amber-700' : 'bg-amber-50 border-amber-200'} border`}>
+                      <h3 className={`font-semibold mb-2 ${darkMode ? 'text-amber-100' : 'text-amber-800'}`}>⚠️ What the Blitz Report DOESN'T Cover</h3>
+                      <ul className={`text-sm space-y-2 ${darkMode ? 'text-amber-200' : 'text-amber-700'}`}>
+                        <li>• <strong>Conceptual questions</strong> - "Why can't we conclude causation?" → Use your knowledge</li>
+                        <li>• <strong>Interpretation</strong> - The blitz gives numbers; YOU must explain what they mean</li>
+                        <li>• <strong>True/False justifications</strong> - Numbers are there, reasoning is on you</li>
+                        <li>• <strong>Propose/Design questions</strong> - These test understanding, not computation</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* TRAPS TAB */}
+                {activeTab === 'traps' && (
+                  <div className={`rounded-xl border overflow-hidden ${bgSecondary} ${borderColor}`}>
+                    <div className={`p-4 border-b ${darkMode ? 'bg-red-950 border-red-700' : 'bg-red-50 border-red-200'}`}>
+                      <h2 className={`text-lg font-semibold flex items-center gap-2 ${darkMode ? 'text-red-100' : 'text-red-800'}`}>
+                        <Icon name="AlertTriangle" className="w-5 h-5" />
+                        Critical Exam Traps
+                      </h2>
+                    </div>
+                    <div className={`divide-y ${borderColor}`}>
+                      {traps.map((trap, idx) => (
+                        <div key={idx} className="p-4">
+                          <p className={`font-medium mb-2 ${textPrimary}`}>{trap.trap}</p>
+                          <div className="grid md:grid-cols-2 gap-3">
+                            <div className={`p-3 rounded-lg ${darkMode ? 'bg-red-950 border-red-700' : 'bg-red-50 border-red-200'} border`}>
+                              <p className={`text-xs font-semibold mb-1 ${darkMode ? 'text-red-200' : 'text-red-700'}`}>❌ WRONG</p>
+                              <p className={`text-sm ${darkMode ? 'text-red-100' : 'text-red-800'}`}>{trap.wrong}</p>
+                            </div>
+                            <div className={`p-3 rounded-lg ${darkMode ? 'bg-emerald-950 border-emerald-700' : 'bg-emerald-50 border-emerald-200'} border`}>
+                              <p className={`text-xs font-semibold mb-1 ${darkMode ? 'text-emerald-200' : 'text-emerald-700'}`}>✓ CORRECT</p>
+                              <p className={`text-sm ${darkMode ? 'text-emerald-100' : 'text-emerald-800'}`}>{trap.correct}</p>
+                            </div>
+                          </div>
+                          <p className={`text-xs mt-2 ${textMuted}`}>📚 {trap.source}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </main>
+
+              <footer className={`border-t py-4 mt-8 ${borderColor}`}>
+                <div className="max-w-4xl mx-auto px-4 text-center">
+                  <p className={`text-sm ${textMuted}`}>Based on EPFL ADA exams 2019-2023 • Good luck! 🍀</p>
+                </div>
+              </footer>
+            </div>
+          );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<ADAExamNavigator />);
+    </script>
+</body>
+</html>
